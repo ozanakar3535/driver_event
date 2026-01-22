@@ -2,7 +2,7 @@ import { initializeApp } from "firebase/app";
 import { getDatabase, ref, set, get, update, onValue } from "firebase/database";
 import { Driver, DriverStatus, EventLog, EventType, WebhookConfig } from '../types';
 
-// 1. Senin Firebase Yapılandırman (Kesinleşmiş)
+// 1. Firebase Yapılandırman (Senin projen için özel)
 const firebaseConfig = {
   apiKey: "AIzaSyAQK1FQKLlzRlqGGHsAhBohissUkCW3OBI",
   authDomain: "driver-f5210.firebaseapp.com",
@@ -39,7 +39,7 @@ const initialData: StorageData = {
 };
 
 export const mockApi = {
-  // Verileri Gerçek Zamanlı Dinle (Farklı cihazlar için kritik)
+  // Verileri Firebase'den anlık dinle
   subscribe: (callback: (data: StorageData) => void) => {
     const dataRef = ref(db, 'appData');
     return onValue(dataRef, (snapshot) => {
@@ -86,38 +86,21 @@ export const mockApi = {
 
   logEvent: async (event: Omit<EventLog, 'id' | 'webhookStatus'>): Promise<EventLog> => {
     const eventId = Math.random().toString(36).substr(2, 9);
-    const newEvent: EventLog = {
-      ...event,
-      id: eventId,
-      webhookStatus: 'SUCCESS',
-    };
-
-    // 1. Olayı Firebase'e yaz
+    const newEvent: EventLog = { ...event, id: eventId, webhookStatus: 'SUCCESS' };
     await set(ref(db, `appData/events/${eventId}`), newEvent);
-
-    // 2. Sürücünün durumunu ve konumunu güncelle
+    
     const driverRef = ref(db, `appData/drivers/${event.driverId}`);
     const driverSnap = await get(driverRef);
-    
     if (driverSnap.exists()) {
       let updates: any = {
-        lastLocation: {
-          latitude: event.latitude,
-          longitude: event.longitude,
-          timestamp: event.timestamp
-        }
+        lastLocation: { latitude: event.latitude, longitude: event.longitude, timestamp: event.timestamp }
       };
-
       switch (event.type) {
         case EventType.DRIVER_ONLINE: updates.status = DriverStatus.ONLINE; break;
-        case EventType.DRIVER_OFFLINE: 
-          updates.status = DriverStatus.OFFLINE; 
-          updates.isTaskActive = false; 
-          break;
+        case EventType.DRIVER_OFFLINE: updates.status = DriverStatus.OFFLINE; updates.isTaskActive = false; break;
         case EventType.LOCATION_CONFIRMED: updates.isTaskActive = true; break;
         case EventType.PASSENGER_DROPPED_OFF: updates.isTaskActive = false; break;
       }
-
       await update(driverRef, updates);
     }
     return newEvent;
