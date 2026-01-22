@@ -1,8 +1,8 @@
 import { initializeApp } from "firebase/app";
-import { getDatabase, ref, set, get, update, push, onValue } from "firebase/database";
+import { getDatabase, ref, set, get, update, onValue } from "firebase/database";
 import { Driver, DriverStatus, EventLog, EventType, WebhookConfig } from '../types';
 
-// 1. Firebase Yapılandırman
+// 1. Senin Firebase Yapılandırman (Kesinleşmiş)
 const firebaseConfig = {
   apiKey: "AIzaSyAQK1FQKLlzRlqGGHsAhBohissUkCW3OBI",
   authDomain: "driver-f5210.firebaseapp.com",
@@ -11,7 +11,7 @@ const firebaseConfig = {
   messagingSenderId: "939708747046",
   appId: "1:939708747046:web:a7247e3850baaf678905e7",
   measurementId: "G-08E22LJS8P",
-  databaseURL: "https://driver-f5210-default-rtdb.firebaseio.com" // Proje ID'ne göre oluşturuldu
+  databaseURL: "https://driver-f5210-default-rtdb.firebaseio.com"
 };
 
 // Firebase Başlatma
@@ -24,7 +24,6 @@ interface StorageData {
   webhookConfig: WebhookConfig;
 }
 
-// Başlangıç Verileri
 const initialData: StorageData = {
   drivers: [
     { id: '1', name: 'Caner', phone: '+905551234567', status: DriverStatus.OFFLINE, totalDistance: 0, isTaskActive: false },
@@ -40,20 +39,18 @@ const initialData: StorageData = {
 };
 
 export const mockApi = {
-  // Verileri Firebase'den anlık dinlemek için (Admin paneli için gerekli)
-  subscribeToData: (callback: (data: StorageData) => void) => {
+  // Verileri Gerçek Zamanlı Dinle (Farklı cihazlar için kritik)
+  subscribe: (callback: (data: StorageData) => void) => {
     const dataRef = ref(db, 'appData');
     return onValue(dataRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        // Firebase listeleri nesne olarak tutabilir, diziye çeviriyoruz
         callback({
           ...data,
           drivers: data.drivers ? Object.values(data.drivers) : [],
           events: data.events ? Object.values(data.events) : []
         });
       } else {
-        // Veri yoksa başlangıç verilerini yükle
         set(dataRef, initialData);
       }
     });
@@ -74,7 +71,6 @@ export const mockApi = {
   },
 
   addDriver: async (name: string, phone: string) => {
-    const driversRef = ref(db, 'appData/drivers');
     const newDriverId = Math.random().toString(36).substr(2, 9);
     const newDriver: Driver = {
       id: newDriverId,
@@ -96,15 +92,14 @@ export const mockApi = {
       webhookStatus: 'SUCCESS',
     };
 
-    // 1. Olayı Kaydet
+    // 1. Olayı Firebase'e yaz
     await set(ref(db, `appData/events/${eventId}`), newEvent);
 
-    // 2. Sürücü Durumunu Güncelle
+    // 2. Sürücünün durumunu ve konumunu güncelle
     const driverRef = ref(db, `appData/drivers/${event.driverId}`);
     const driverSnap = await get(driverRef);
     
     if (driverSnap.exists()) {
-      const driver = driverSnap.val();
       let updates: any = {
         lastLocation: {
           latitude: event.latitude,
@@ -114,24 +109,21 @@ export const mockApi = {
       };
 
       switch (event.type) {
-        case EventType.DRIVER_ONLINE:
-          updates.status = DriverStatus.ONLINE;
+        case EventType.DRIVER_ONLINE: updates.status = DriverStatus.ONLINE; break;
+        case EventType.DRIVER_OFFLINE: 
+          updates.status = DriverStatus.OFFLINE; 
+          updates.isTaskActive = false; 
           break;
-        case EventType.DRIVER_OFFLINE:
-          updates.status = DriverStatus.OFFLINE;
-          updates.isTaskActive = false;
-          break;
-        case EventType.LOCATION_CONFIRMED:
-          updates.isTaskActive = true;
-          break;
-        case EventType.PASSENGER_DROPPED_OFF:
-          updates.isTaskActive = false;
-          break;
+        case EventType.LOCATION_CONFIRMED: updates.isTaskActive = true; break;
+        case EventType.PASSENGER_DROPPED_OFF: updates.isTaskActive = false; break;
       }
 
       await update(driverRef, updates);
     }
-
     return newEvent;
+  },
+
+  resetData: async () => {
+    await set(ref(db, 'appData'), initialData);
   }
 };
