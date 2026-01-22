@@ -1,0 +1,7 @@
+{
+  "name": "DriverEvent Pro",
+  "description": "A comprehensive real-time driver tracking and event management system featuring mobile-first driver controls, admin live maps, and automated event reporting.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
