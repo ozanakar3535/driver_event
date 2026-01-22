@@ -2,7 +2,6 @@ import { initializeApp } from "firebase/app";
 import { getDatabase, ref, set, get, update, onValue } from "firebase/database";
 import { Driver, DriverStatus, EventLog, EventType, WebhookConfig } from '../types';
 
-// 1. Firebase Yapılandırman (Senin projen için özel)
 const firebaseConfig = {
   apiKey: "AIzaSyAQK1FQKLlzRlqGGHsAhBohissUkCW3OBI",
   authDomain: "driver-f5210.firebaseapp.com",
@@ -14,7 +13,6 @@ const firebaseConfig = {
   databaseURL: "https://driver-f5210-default-rtdb.firebaseio.com"
 };
 
-// Firebase Başlatma
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
@@ -39,7 +37,6 @@ const initialData: StorageData = {
 };
 
 export const mockApi = {
-  // Verileri Firebase'den anlık dinle
   subscribe: (callback: (data: StorageData) => void) => {
     const dataRef = ref(db, 'appData');
     return onValue(dataRef, (snapshot) => {
@@ -72,14 +69,7 @@ export const mockApi = {
 
   addDriver: async (name: string, phone: string) => {
     const newDriverId = Math.random().toString(36).substr(2, 9);
-    const newDriver: Driver = {
-      id: newDriverId,
-      name,
-      phone,
-      status: DriverStatus.OFFLINE,
-      totalDistance: 0,
-      isTaskActive: false
-    };
+    const newDriver: Driver = { id: newDriverId, name, phone, status: DriverStatus.OFFLINE, totalDistance: 0, isTaskActive: false };
     await update(ref(db, `appData/drivers/${newDriverId}`), newDriver);
     return newDriver;
   },
@@ -92,9 +82,7 @@ export const mockApi = {
     const driverRef = ref(db, `appData/drivers/${event.driverId}`);
     const driverSnap = await get(driverRef);
     if (driverSnap.exists()) {
-      let updates: any = {
-        lastLocation: { latitude: event.latitude, longitude: event.longitude, timestamp: event.timestamp }
-      };
+      let updates: any = { lastLocation: { latitude: event.latitude, longitude: event.longitude, timestamp: event.timestamp } };
       switch (event.type) {
         case EventType.DRIVER_ONLINE: updates.status = DriverStatus.ONLINE; break;
         case EventType.DRIVER_OFFLINE: updates.status = DriverStatus.OFFLINE; updates.isTaskActive = false; break;
