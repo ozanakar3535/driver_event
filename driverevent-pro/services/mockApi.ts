@@ -1,7 +1,22 @@
-
+import { initializeApp } from "firebase/app";
+import { getDatabase, ref, set, get, update, push, onValue } from "firebase/database";
 import { Driver, DriverStatus, EventLog, EventType, WebhookConfig } from '../types';
 
-const STORAGE_KEY = 'driver_event_pro_data_v2';
+// 1. Firebase Yapılandırman
+const firebaseConfig = {
+  apiKey: "AIzaSyAQK1FQKLlzRlqGGHsAhBohissUkCW3OBI",
+  authDomain: "driver-f5210.firebaseapp.com",
+  projectId: "driver-f5210",
+  storageBucket: "driver-f5210.firebasestorage.app",
+  messagingSenderId: "939708747046",
+  appId: "1:939708747046:web:a7247e3850baaf678905e7",
+  measurementId: "G-08E22LJS8P",
+  databaseURL: "https://driver-f5210-default-rtdb.firebaseio.com" // Proje ID'ne göre oluşturuldu
+};
+
+// Firebase Başlatma
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
 
 interface StorageData {
   drivers: Driver[];
@@ -9,6 +24,7 @@ interface StorageData {
   webhookConfig: WebhookConfig;
 }
 
+// Başlangıç Verileri
 const initialData: StorageData = {
   drivers: [
     { id: '1', name: 'Caner', phone: '+905551234567', status: DriverStatus.OFFLINE, totalDistance: 0, isTaskActive: false },
@@ -23,127 +39,99 @@ const initialData: StorageData = {
   },
 };
 
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-// Arka plan simülasyonu: Mesai aktifken ve KM sayacı (isTaskActive) açıkken mesafe ekler
-setInterval(() => {
-  const dataStr = localStorage.getItem(STORAGE_KEY);
-  if (!dataStr) return;
-  const parsedData: StorageData = JSON.parse(dataStr);
-  let changed = false;
-
-  parsedData.drivers.forEach(driver => {
-    // Sadece ONLINE olan sürücüler hareket simülasyonuna dahil olur
-    if (driver.status === DriverStatus.ONLINE && driver.lastLocation) {
-      const oldLat = driver.lastLocation.latitude;
-      const oldLng = driver.lastLocation.longitude;
-
-      // Çok küçük bir drift simülasyonu
-      const driftLat = (Math.random() - 0.5) * 0.0004; 
-      const driftLng = (Math.random() - 0.5) * 0.0004;
-      
-      const newLat = oldLat + driftLat;
-      const newLng = oldLng + driftLng;
-
-      // Sadece 'Konumdayım' basılmışsa (isTaskActive true) KM sayacı işler
-      if (driver.isTaskActive) {
-        const distanceMoved = calculateDistance(oldLat, oldLng, newLat, newLng);
-        driver.totalDistance = (driver.totalDistance || 0) + distanceMoved;
-      }
-
-      driver.lastLocation = {
-        latitude: newLat,
-        longitude: newLng,
-        timestamp: new Date().toISOString()
-      };
-      changed = true;
-    }
-  });
-
-  if (changed) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(parsedData));
-  }
-}, 3000);
-
 export const mockApi = {
-  getData: (): StorageData => {
-    const data = localStorage.getItem(STORAGE_KEY);
-    if (!data) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(initialData));
+  // Verileri Firebase'den anlık dinlemek için (Admin paneli için gerekli)
+  subscribeToData: (callback: (data: StorageData) => void) => {
+    const dataRef = ref(db, 'appData');
+    return onValue(dataRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        // Firebase listeleri nesne olarak tutabilir, diziye çeviriyoruz
+        callback({
+          ...data,
+          drivers: data.drivers ? Object.values(data.drivers) : [],
+          events: data.events ? Object.values(data.events) : []
+        });
+      } else {
+        // Veri yoksa başlangıç verilerini yükle
+        set(dataRef, initialData);
+      }
+    });
+  },
+
+  getData: async (): Promise<StorageData> => {
+    const snapshot = await get(ref(db, 'appData'));
+    if (!snapshot.exists()) {
+      await set(ref(db, 'appData'), initialData);
       return initialData;
     }
-    return JSON.parse(data);
+    const data = snapshot.val();
+    return {
+      ...data,
+      drivers: data.drivers ? Object.values(data.drivers) : [],
+      events: data.events ? Object.values(data.events) : []
+    };
   },
 
-  saveData: (data: StorageData) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  },
-
-  addDriver: (name: string, phone: string) => {
-    const data = mockApi.getData();
+  addDriver: async (name: string, phone: string) => {
+    const driversRef = ref(db, 'appData/drivers');
+    const newDriverId = Math.random().toString(36).substr(2, 9);
     const newDriver: Driver = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: newDriverId,
       name,
       phone,
       status: DriverStatus.OFFLINE,
       totalDistance: 0,
       isTaskActive: false
     };
-    data.drivers.push(newDriver);
-    mockApi.saveData(data);
+    await update(ref(db, `appData/drivers/${newDriverId}`), newDriver);
     return newDriver;
   },
 
   logEvent: async (event: Omit<EventLog, 'id' | 'webhookStatus'>): Promise<EventLog> => {
-    const data = mockApi.getData();
+    const eventId = Math.random().toString(36).substr(2, 9);
     const newEvent: EventLog = {
       ...event,
-      id: Math.random().toString(36).substr(2, 9),
+      id: eventId,
       webhookStatus: 'SUCCESS',
     };
 
-    // Olayı en başa ekle
-    data.events.unshift(newEvent);
-    
-    const driverIdx = data.drivers.findIndex(d => d.id === event.driverId);
-    if (driverIdx !== -1) {
-      const driver = data.drivers[driverIdx];
+    // 1. Olayı Kaydet
+    await set(ref(db, `appData/events/${eventId}`), newEvent);
 
-      // Olay tiplerine göre sürücü durumunu güncelle
+    // 2. Sürücü Durumunu Güncelle
+    const driverRef = ref(db, `appData/drivers/${event.driverId}`);
+    const driverSnap = await get(driverRef);
+    
+    if (driverSnap.exists()) {
+      const driver = driverSnap.val();
+      let updates: any = {
+        lastLocation: {
+          latitude: event.latitude,
+          longitude: event.longitude,
+          timestamp: event.timestamp
+        }
+      };
+
       switch (event.type) {
         case EventType.DRIVER_ONLINE:
-          driver.status = DriverStatus.ONLINE;
+          updates.status = DriverStatus.ONLINE;
           break;
         case EventType.DRIVER_OFFLINE:
-          driver.status = DriverStatus.OFFLINE;
-          driver.isTaskActive = false; // Güvenlik: Mesai biterse transfer de biter
+          updates.status = DriverStatus.OFFLINE;
+          updates.isTaskActive = false;
           break;
         case EventType.LOCATION_CONFIRMED:
-          driver.isTaskActive = true;
+          updates.isTaskActive = true;
           break;
         case EventType.PASSENGER_DROPPED_OFF:
-          driver.isTaskActive = false;
+          updates.isTaskActive = false;
           break;
       }
 
-      // Son konumu her zaman güncelle
-      driver.lastLocation = {
-        latitude: event.latitude,
-        longitude: event.longitude,
-        timestamp: event.timestamp
-      };
+      await update(driverRef, updates);
     }
 
-    mockApi.saveData(data);
     return newEvent;
   }
 };
